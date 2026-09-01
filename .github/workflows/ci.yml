@@ -14,14 +14,14 @@ jobs:
   shell-syntax:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Validate shell syntax
         run: bash -n scripts/package.sh
 
   python-zip:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Create package inputs
         shell: bash
         run: |
@@ -55,7 +55,7 @@ jobs:
   python-layer:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Create layer inputs
         shell: bash
         run: |
@@ -83,7 +83,7 @@ jobs:
   node-zip:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Create package inputs
         shell: bash
         run: |
@@ -111,7 +111,7 @@ jobs:
   node-layer:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Create layer inputs
         shell: bash
         run: |
@@ -136,25 +136,25 @@ jobs:
   invalid-runtime:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Reject unsupported runtime
-        id: package
-        continue-on-error: true
-        uses: ./
-        with:
-          mode: zip
-          runtime: ruby
-          source_dir: .
-      - name: Verify unsupported runtime failed
-        if: steps.package.outcome != 'failure'
+        shell: bash
         run: |
-          echo "Unsupported runtime unexpectedly succeeded."
-          exit 1
+          if env \
+            GITHUB_ACTION_PATH="$GITHUB_WORKSPACE" \
+            GITHUB_OUTPUT="$RUNNER_TEMP/package-output" \
+            INPUT_MODE=zip \
+            INPUT_RUNTIME=ruby \
+            INPUT_SOURCE_DIR=. \
+            bash scripts/package.sh > /dev/null 2>&1; then
+            echo "Unsupported runtime unexpectedly succeeded."
+            exit 1
+          fi
 
   unsafe-inputs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Create unsafe package inputs
         shell: bash
         run: |
@@ -165,60 +165,59 @@ jobs:
           ln -s "$GITHUB_WORKSPACE/.git" "$fixture/nested-link/git-link"
           ln -s "$GITHUB_WORKSPACE/.git" "$fixture/output-link"
       - name: Reject Zip option injection through exclude
-        id: unsafe-exclude
-        continue-on-error: true
-        uses: ./
-        with:
-          mode: zip
-          runtime: python
-          source_dir: test-fixtures/unsafe-inputs/app
-          output_path: test-output/unsafe-exclude.zip
-          exclude: |
-            -T
-      - name: Verify unsafe exclude was rejected
-        if: steps.unsafe-exclude.outcome != 'failure'
+        shell: bash
         run: |
-          echo "Unsafe exclude unexpectedly succeeded."
-          exit 1
+          if env \
+            GITHUB_ACTION_PATH="$GITHUB_WORKSPACE" \
+            GITHUB_OUTPUT="$RUNNER_TEMP/package-output" \
+            INPUT_MODE=zip \
+            INPUT_RUNTIME=python \
+            INPUT_SOURCE_DIR=test-fixtures/unsafe-inputs/app \
+            INPUT_OUTPUT_PATH=test-output/unsafe-exclude.zip \
+            INPUT_EXCLUDE=-T \
+            bash scripts/package.sh > /dev/null 2>&1; then
+            echo "Unsafe exclude unexpectedly succeeded."
+            exit 1
+          fi
       - name: Reject symbolic-link package root
-        id: symlink-root
-        continue-on-error: true
-        uses: ./
-        with:
-          mode: zip
-          runtime: python
-          source_dir: test-fixtures/unsafe-inputs/root-link
-          output_path: test-output/symlink-root.zip
-      - name: Verify symbolic-link package root was rejected
-        if: steps.symlink-root.outcome != 'failure'
+        shell: bash
         run: |
-          echo "Symbolic-link package root unexpectedly succeeded."
-          exit 1
+          if env \
+            GITHUB_ACTION_PATH="$GITHUB_WORKSPACE" \
+            GITHUB_OUTPUT="$RUNNER_TEMP/package-output" \
+            INPUT_MODE=zip \
+            INPUT_RUNTIME=python \
+            INPUT_SOURCE_DIR=test-fixtures/unsafe-inputs/root-link \
+            INPUT_OUTPUT_PATH=test-output/symlink-root.zip \
+            bash scripts/package.sh > /dev/null 2>&1; then
+            echo "Symbolic-link package root unexpectedly succeeded."
+            exit 1
+          fi
       - name: Reject nested symbolic links
-        id: nested-symlink
-        continue-on-error: true
-        uses: ./
-        with:
-          mode: zip
-          runtime: python
-          source_dir: test-fixtures/unsafe-inputs/nested-link
-          output_path: test-output/nested-symlink.zip
-      - name: Verify nested symbolic link was rejected
-        if: steps.nested-symlink.outcome != 'failure'
+        shell: bash
         run: |
-          echo "Nested symbolic link unexpectedly succeeded."
-          exit 1
+          if env \
+            GITHUB_ACTION_PATH="$GITHUB_WORKSPACE" \
+            GITHUB_OUTPUT="$RUNNER_TEMP/package-output" \
+            INPUT_MODE=zip \
+            INPUT_RUNTIME=python \
+            INPUT_SOURCE_DIR=test-fixtures/unsafe-inputs/nested-link \
+            INPUT_OUTPUT_PATH=test-output/nested-symlink.zip \
+            bash scripts/package.sh > /dev/null 2>&1; then
+            echo "Nested symbolic link unexpectedly succeeded."
+            exit 1
+          fi
       - name: Reject symbolic-link output parent
-        id: symlink-output
-        continue-on-error: true
-        uses: ./
-        with:
-          mode: zip
-          runtime: python
-          source_dir: test-fixtures/unsafe-inputs/app
-          output_path: test-fixtures/unsafe-inputs/output-link/package.zip
-      - name: Verify symbolic-link output parent was rejected
-        if: steps.symlink-output.outcome != 'failure'
+        shell: bash
         run: |
-          echo "Symbolic-link output parent unexpectedly succeeded."
-          exit 1
+          if env \
+            GITHUB_ACTION_PATH="$GITHUB_WORKSPACE" \
+            GITHUB_OUTPUT="$RUNNER_TEMP/package-output" \
+            INPUT_MODE=zip \
+            INPUT_RUNTIME=python \
+            INPUT_SOURCE_DIR=test-fixtures/unsafe-inputs/app \
+            INPUT_OUTPUT_PATH=test-fixtures/unsafe-inputs/output-link/package.zip \
+            bash scripts/package.sh > /dev/null 2>&1; then
+            echo "Symbolic-link output parent unexpectedly succeeded."
+            exit 1
+          fi
