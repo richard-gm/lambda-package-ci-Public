@@ -1,0 +1,224 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shell-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate shell syntax
+        run: bash -n scripts/package.sh
+
+  python-zip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create package inputs
+        shell: bash
+        run: |
+          fixture="$GITHUB_WORKSPACE/test-fixtures/python-zip"
+          mkdir -p "$fixture/app" "$fixture/site-packages"
+          printf 'def handler(event, context): return "ok"\n' > "$fixture/app/handler.py"
+          printf 'VALUE = "dependency"\n' > "$fixture/site-packages/dependency.py"
+          printf 'ignore me\n' > "$fixture/app/ignore.tmp"
+      - name: Package Python deployment zip
+        id: package
+        uses: ./
+        with:
+          mode: zip
+          runtime: python
+          source_dir: test-fixtures/python-zip/app
+          dependencies_dir: test-fixtures/python-zip/site-packages
+          output_path: test-output/python-zip.zip
+          exclude: |
+            *.tmp
+      - name: Verify Python deployment zip
+        shell: bash
+        run: |
+          test -s "${{ steps.package.outputs.zip_path }}"
+          unzip -tqq "${{ steps.package.outputs.zip_path }}"
+          unzip -Z1 "${{ steps.package.outputs.zip_path }}" | sed 's#^\./##' | grep -Fx 'handler.py'
+          unzip -Z1 "${{ steps.package.outputs.zip_path }}" | sed 's#^\./##' | grep -Fx 'dependency.py'
+          if unzip -Z1 "${{ steps.package.outputs.zip_path }}" | sed 's#^\./##' | grep -Fx 'ignore.tmp'; then
+            exit 1
+          fi
+
+  python-layer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create layer inputs
+        shell: bash
+        run: |
+          fixture="$GITHUB_WORKSPACE/test-fixtures/python-layer"
+          mkdir -p "$fixture/shared-source" "$fixture/site-packages"
+          printf 'VALUE = "shared"\n' > "$fixture/shared-source/helpers.py"
+          printf 'VALUE = "dependency"\n' > "$fixture/site-packages/dependency.py"
+      - name: Package Python layer
+        id: package
+        uses: ./
+        with:
+          mode: layer
+          runtime: python
+          source_dir: test-fixtures/python-layer/shared-source
+          dependencies_dir: test-fixtures/python-layer/site-packages
+          output_path: test-output/python-layer.zip
+      - name: Verify Python layer layout
+        shell: bash
+        run: |
+          test -s "${{ steps.package.outputs.zip_path }}"
+          unzip -tqq "${{ steps.package.outputs.zip_path }}"
+          unzip -Z1 "${{ steps.package.outputs.zip_path }}" | sed 's#^\./##' | grep -Fx 'python/helpers.py'
+          unzip -Z1 "${{ steps.package.outputs.zip_path }}" | sed 's#^\./##' | grep -Fx 'python/dependency.py'
+
+  node-zip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create package inputs
+        shell: bash
+        run: |
+          fixture="$GITHUB_WORKSPACE/test-fixtures/node-zip"
+          mkdir -p "$fixture/app" "$fixture/node_modules/example"
+          printf 'exports.handler = async () => "ok";\n' > "$fixture/app/index.js"
+          printf 'module.exports = "dependency";\n' > "$fixture/node_modules/example/index.js"
+      - name: Package Node.js deployment zip
+        id: package
+        uses: ./
+        with:
+          mode: zip
+          runtime: node
+          source_dir: test-fixtures/node-zip/app
+          dependencies_dir: test-fixtures/node-zip/node_modules
+          output_path: test-output/node-zip.zip
+      - name: Verify Node.js deployment zip
+        shell: bash
+        run: |
+          test -s "${{ steps.package.outputs.zip_path }}"
+          unzip -tqq "${{ steps.package.outputs.zip_path }}"
+          unzip -Z1 "${{ steps.package.outputs.zip_path }}" | sed 's#^\./##' | grep -Fx 'index.js'
+          unzip -Z1 "${{ steps.package.outputs.zip_path }}" | sed 's#^\./##' | grep -Fx 'node_modules/example/index.js'
+
+  node-layer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create layer inputs
+        shell: bash
+        run: |
+          fixture="$GITHUB_WORKSPACE/test-fixtures/node-layer"
+          mkdir -p "$fixture/node_modules/example"
+          printf 'module.exports = "dependency";\n' > "$fixture/node_modules/example/index.js"
+      - name: Package Node.js layer
+        id: package
+        uses: ./
+        with:
+          mode: layer
+          runtime: node
+          dependencies_dir: test-fixtures/node-layer/node_modules
+          output_path: test-output/node-layer.zip
+      - name: Verify Node.js layer layout
+        shell: bash
+        run: |
+          test -s "${{ steps.package.outputs.zip_path }}"
+          unzip -tqq "${{ steps.package.outputs.zip_path }}"
+          unzip -Z1 "${{ steps.package.outputs.zip_path }}" | sed 's#^\./##' | grep -Fx 'nodejs/node_modules/example/index.js'
+
+  invalid-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject unsupported runtime
+        id: package
+        continue-on-error: true
+        uses: ./
+        with:
+          mode: zip
+          runtime: ruby
+          source_dir: .
+      - name: Verify unsupported runtime failed
+        if: steps.package.outcome != 'failure'
+        run: |
+          echo "Unsupported runtime unexpectedly succeeded."
+          exit 1
+
+  unsafe-inputs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create unsafe package inputs
+        shell: bash
+        run: |
+          fixture="$GITHUB_WORKSPACE/test-fixtures/unsafe-inputs"
+          mkdir -p "$fixture/app" "$fixture/nested-link"
+          printf 'def handler(event, context): return "ok"\n' > "$fixture/app/handler.py"
+          ln -s "$GITHUB_WORKSPACE/.git" "$fixture/root-link"
+          ln -s "$GITHUB_WORKSPACE/.git" "$fixture/nested-link/git-link"
+          ln -s "$GITHUB_WORKSPACE/.git" "$fixture/output-link"
+      - name: Reject Zip option injection through exclude
+        id: unsafe-exclude
+        continue-on-error: true
+        uses: ./
+        with:
+          mode: zip
+          runtime: python
+          source_dir: test-fixtures/unsafe-inputs/app
+          output_path: test-output/unsafe-exclude.zip
+          exclude: |
+            -T
+      - name: Verify unsafe exclude was rejected
+        if: steps.unsafe-exclude.outcome != 'failure'
+        run: |
+          echo "Unsafe exclude unexpectedly succeeded."
+          exit 1
+      - name: Reject symbolic-link package root
+        id: symlink-root
+        continue-on-error: true
+        uses: ./
+        with:
+          mode: zip
+          runtime: python
+          source_dir: test-fixtures/unsafe-inputs/root-link
+          output_path: test-output/symlink-root.zip
+      - name: Verify symbolic-link package root was rejected
+        if: steps.symlink-root.outcome != 'failure'
+        run: |
+          echo "Symbolic-link package root unexpectedly succeeded."
+          exit 1
+      - name: Reject nested symbolic links
+        id: nested-symlink
+        continue-on-error: true
+        uses: ./
+        with:
+          mode: zip
+          runtime: python
+          source_dir: test-fixtures/unsafe-inputs/nested-link
+          output_path: test-output/nested-symlink.zip
+      - name: Verify nested symbolic link was rejected
+        if: steps.nested-symlink.outcome != 'failure'
+        run: |
+          echo "Nested symbolic link unexpectedly succeeded."
+          exit 1
+      - name: Reject symbolic-link output parent
+        id: symlink-output
+        continue-on-error: true
+        uses: ./
+        with:
+          mode: zip
+          runtime: python
+          source_dir: test-fixtures/unsafe-inputs/app
+          output_path: test-fixtures/unsafe-inputs/output-link/package.zip
+      - name: Verify symbolic-link output parent was rejected
+        if: steps.symlink-output.outcome != 'failure'
+        run: |
+          echo "Symbolic-link output parent unexpectedly succeeded."
+          exit 1

@@ -1,0 +1,50 @@
+name: Package Lambda
+description: Package prepared Python or Node.js Lambda code as a deployment zip or Lambda layer.
+
+inputs:
+  mode:
+    description: "Archive type: zip or layer."
+    required: false
+    default: zip
+  runtime:
+    description: "Runtime family: python or node."
+    required: true
+  source_dir:
+    description: Workspace-relative directory containing application or shared Python source. Required for zip mode and optional for Python layer mode.
+    required: false
+    default: ""
+  dependencies_dir:
+    description: Workspace-relative prepared Python site-packages directory or Node.js node_modules directory.
+    required: false
+    default: ""
+  output_path:
+    description: Relative path, within the workspace, for the generated .zip archive.
+    required: false
+    default: lambda-package.zip
+  exclude:
+    description: Optional newline-delimited archive-relative glob patterns to exclude. Patterns must not begin with - or @.
+    required: false
+    default: ""
+
+outputs:
+  zip_path:
+    description: Absolute path to the generated archive.
+    value: ${{ steps.package.outputs.zip_path }}
+  archive_sha256:
+    description: SHA-256 digest of the generated archive.
+    value: ${{ steps.package.outputs.archive_sha256 }}
+
+runs:
+  using: composite
+  steps:
+    - name: Package Lambda archive
+      id: package
+      shell: bash
+      env:
+        INPUT_MODE: ${{ inputs.mode }}
+        INPUT_RUNTIME: ${{ inputs.runtime }}
+        INPUT_SOURCE_DIR: ${{ inputs.source_dir }}
+        INPUT_DEPENDENCIES_DIR: ${{ inputs.dependencies_dir }}
+        INPUT_OUTPUT_PATH: ${{ inputs.output_path }}
+        INPUT_EXCLUDE: ${{ inputs.exclude }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/package.sh"
